@@ -1,0 +1,137 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "*"
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare
+        id: prepare
+
+        run: |
+          sudo apt-get update
+          sudo apt-get install dos2unix
+          sudo apt-get install make clang git
+
+      - name: Setup Go
+        id: setup-go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Setup Java
+        id: setup-java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Setup Android SDK and NDK
+        id: setup-android
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK r28
+        run: |
+          # 查找可用的 NDK 版本
+          sdkmanager --list | grep ndk
+          # 安装 NDK r28 (使用实际可用的版本号)
+          echo "y" | sdkmanager --install "ndk;28.0.13004108"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/28.0.13004108" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_SDK_ROOT/ndk/28.0.13004108" >> $GITHUB_ENV
+          echo "$ANDROID_SDK_ROOT/ndk/28.0.13004108/toolchains/llvm/prebuilt/linux-x86_64/bin" >> $GITHUB_PATH
+
+      - name: Setup Gradle
+        id: setup-gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-disabled: false
+
+      - name: Build Libbox
+        id: build-libbox
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+        run: |
+          export PATH=$PATH:$(go env GOPATH)/bin
+          git clone https://github.com/nekolsd/sing-box
+          cd sing-box
+          make lib_install
+          version=$(CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          tags="with_quic,with_dhcp,with_wireguard,with_utls,with_clash_api,with_gvisor,with_conntrack"
+          CGO_ENABLED=1 gomobile bind -v -trimpath -androidapi 21 -javapkg=io.nekohasekai -libname=box -tags ${tags} -ldflags "-X github.com/sagernet/sing-box/constant.Version=${version} -buildid= -checklinkname=0" ./experimental/libbox
+          cd $GITHUB_WORKSPACE
+          mkdir -p app/libs
+          cp sing-box/libbox.aar app/libs/ || exit 1
+
+      - name: Execute Gradle build
+        id: build-apk
+        run: |
+          dos2unix ./gradlew
+          chmod 0755 ./gradlew
+          ./gradlew assembleOtherRelease
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+
+      - name: Verify APKs
+        run: |
+          # 获取所有生成的 APK 文件
+          APK_FILES=$(find ./app/build/outputs/apk/other/release -name "*.apk")
+          if [ -z "$APK_FILES" ]; then
+            echo "APK 构建失败：找不到 APK 文件"
+            exit 1
+          fi
+          
+          # 显示找到的 APK 文件
+          echo "找到以下 APK 文件:"
+          for apk in $APK_FILES; do
+            echo "- $apk"
+          done
+          
+          # 检查每个 APK 文件是否有效
+          for apk in $APK_FILES; do
+            if ! unzip -t "$apk" > /dev/null; then
+              echo "APK 文件验证失败: $apk"
+              exit 1
+            fi
+          done
+          
+          echo "所有 APK 文件构建成功并通过基本验证"
+
+      - name: Prepare Release Files
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          
+          # 创建构建目录
+          mkdir -p build
+          
+          # 直接复制所有 APK，保留其原始文件名（包含架构信息）
+          find ./app/build/outputs/apk/other/release -name "*.apk" -exec cp {} ./build/ \;
+          
+          # 列出准备上传的文件
+          echo "准备上传以下文件到 GitHub Release:"
+          ls -la ./build/
+          
+          # 创建一个包含所有 APK 文件的列表，用于上传
+          APK_FILES=$(find ./build -name "*.apk" | tr '\n' ' ')
+          echo "APK_FILES=${APK_FILES}" >> $GITHUB_ENV
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SFA ${{ env.VERSION }}
+          files: ./build/*.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: false
