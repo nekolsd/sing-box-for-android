@@ -14,7 +14,7 @@ import java.io.Closeable
 
 class GitHubUpdateChecker : Closeable {
     companion object {
-        private const val RELEASES_URL = "https://api.github.com/repos/SagerNet/sing-box/releases"
+        private const val RELEASES_URL = "https://api.github.com/repos/nekolsd/sing-box-for-android/releases"
         private const val METADATA_FILENAME = "SFA-version-metadata.json"
     }
 
@@ -34,7 +34,7 @@ class GitHubUpdateChecker : Closeable {
                 continue
             }
             val metadata = runCatching { downloadMetadata(release) }.getOrNull() ?: continue
-            if (!isNewerThanCurrent(metadata.versionName)) {
+            if (!isNewerThanCurrent(metadata.versionName, metadata.versionCode)) {
                 continue
             }
             val currentBest = selected
@@ -86,7 +86,12 @@ class GitHubUpdateChecker : Closeable {
         }
     }
 
-    private fun isNewerThanCurrent(versionName: String): Boolean = Libbox.compareSemver(versionName, BuildConfig.VERSION_NAME)
+    private fun isNewerThanCurrent(versionName: String, versionCode: Int): Boolean {
+        if (Libbox.compareSemver(versionName, BuildConfig.VERSION_NAME)) {
+            return true
+        }
+        return versionName == BuildConfig.VERSION_NAME && versionCode > BuildConfig.VERSION_CODE
+    }
 
     private fun isBetterVersion(version: VersionMetadata, other: VersionMetadata): Boolean {
         if (Libbox.compareSemver(version.versionName, other.versionName)) {

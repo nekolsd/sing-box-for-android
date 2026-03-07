@@ -1,0 +1,130 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      sing_box_ref:
+        description: "sing-box tag or commit to build against"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        id: checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y make
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+          check-latest: true
+          cache: false
+
+      - name: Setup OpenJDK
+        run: |
+          sudo apt-get install -y openjdk-17-jdk-headless
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+
+      - name: Setup Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r28
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build Libbox
+        id: build-libbox
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          SING_BOX_REF="${{ inputs.sing_box_ref || github.ref_name }}"
+          echo "Using sing-box ref: ${SING_BOX_REF}"
+          export PATH=$PATH:$(go env GOPATH)/bin
+          git clone --branch "${SING_BOX_REF}" --depth 1 https://github.com/nekolsd/sing-box
+          cd sing-box
+          make lib_install
+          version=$(CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          tags="with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,with_clash_api,with_tailscale,badlinkname,tfogo_checklinkname0,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird"
+          gomobile bind -v -trimpath -buildvcs=false -androidapi 23 -javapkg=io.nekohasekai -libname=box -tags ${tags} -ldflags "-X github.com/sagernet/sing-box/constant.Version=${version} -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid= -checklinkname=0" ./experimental/libbox
+          cd $GITHUB_WORKSPACE
+          mkdir -p app/libs
+          cp sing-box/libbox.aar app/libs/ || exit 1
+
+      - name: Execute Gradle build
+        id: build-apk
+        run: ./gradlew assembleOtherRelease
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+
+      - name: Verify APKs
+        run: |
+          APK_FILES=$(find ./app/build/outputs/apk/other/release -name "*.apk")
+          if [ -z "$APK_FILES" ]; then
+            echo "APK 构建失败：找不到 APK 文件"
+            exit 1
+          fi
+          
+          echo "找到以下 APK 文件:"
+          for apk in $APK_FILES; do
+            echo "- $apk"
+          done
+          
+          for apk in $APK_FILES; do
+            if ! unzip -t "$apk" > /dev/null; then
+              echo "APK 文件验证失败: $apk"
+              exit 1
+            fi
+          done
+          
+          echo "所有 APK 文件构建成功并通过基本验证"
+
+      - name: Prepare Release Files
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          
+          mkdir -p build
+          
+          find ./app/build/outputs/apk/other/release -name "*.apk" -exec cp {} ./build/ \;
+          
+          VERSION_CODE=$(grep VERSION_CODE version.properties | cut -d= -f2)
+          VERSION_NAME=$(grep VERSION_NAME version.properties | cut -d= -f2)
+          echo "{\"version_code\":${VERSION_CODE},\"version_name\":\"${VERSION_NAME}\"}" > ./build/SFA-version-metadata.json
+          
+          echo "准备上传以下文件到 GitHub Release:"
+          ls -la ./build/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SFA ${{ env.VERSION }}
+          files: |
+            ./build/*.apk
+            ./build/SFA-version-metadata.json
+          draft: false
+          prerelease: false
+          generate_release_notes: false

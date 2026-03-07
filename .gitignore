@@ -2,13 +2,16 @@
 .gradle
 /local.properties
 /.idea/
+/.kotlin/
 .DS_Store
 build/
 /captures
 .externalNativeBuild
 .cxx
 local.properties
+/app/build/
 /app/libs/
+/app/other/
 /service-account-credentials.json
 /CLAUDE.md
 /.claude/

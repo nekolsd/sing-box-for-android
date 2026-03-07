@@ -198,7 +198,6 @@
     <string name="core_data_size">Data Size</string>
     <string name="about">About</string>
     <string name="source_code">Source Code</string>
-    <string name="sponsor">Sponsor</string>
     <string name="working_directory">Working Directory</string>
     <string name="disable_deprecated_warnings">Disable Deprecated Warnings</string>
     <string name="cache_size">Cache Size</string>
