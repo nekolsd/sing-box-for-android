@@ -97,15 +97,12 @@ object Vendor : VendorInterface {
 
     override val hasCustomUpdate = true
 
-    override val updateSources = listOf(UpdateSource.GITHUB, UpdateSource.FDROID)
+    override val updateSources = listOf(UpdateSource.GITHUB)
 
-    override fun checkUpdateAsync(): UpdateInfo? = when (UpdateSource.fromString(Settings.updateSource)) {
-        UpdateSource.FDROID -> checkFDroidUpdate(Application.application)
-        UpdateSource.GITHUB -> {
-            val track = UpdateTrack.fromString(Settings.updateTrack)
-            GitHubUpdateChecker().use { checker ->
-                checker.checkUpdate(track)
-            }
+    override fun checkUpdateAsync(): UpdateInfo? {
+        val track = UpdateTrack.fromString(Settings.updateTrack)
+        return GitHubUpdateChecker().use { checker ->
+            checker.checkUpdate(track)
         }
     }
 

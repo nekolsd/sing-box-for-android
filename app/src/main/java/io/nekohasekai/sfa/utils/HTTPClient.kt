@@ -26,6 +26,8 @@ class HTTPClient : Closeable {
 
     init {
         client.modernTLS()
+        client.appendCertificateStore("mozilla")
+        client.appendCertificateStore("chrome")
     }
 
     fun getString(url: String): String {
