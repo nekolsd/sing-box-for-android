@@ -196,7 +196,6 @@
     <string name="core_data_size">Размер данных</string>
     <string name="about">О приложении</string>
     <string name="source_code">Исходный код</string>
-    <string name="sponsor">Поддержать</string>
     <string name="working_directory">Рабочая директория</string>
     <string name="disable_deprecated_warnings">Отключить предупреждения об устаревании</string>
     <string name="notification_settings">Уведомления</string>
