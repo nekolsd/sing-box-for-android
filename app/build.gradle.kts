@@ -67,7 +67,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.nekohasekai.sfa"
+        applicationId = "io.nekolsd.sfa"
         minSdk = 21
         targetSdk = 35
         versionCode = getVersionProps("VERSION_CODE").toInt()
@@ -77,10 +77,10 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
-            storePassword = getProps("KEYSTORE_PASS")
-            keyAlias = getProps("ALIAS_NAME")
-            keyPassword = getProps("ALIAS_PASS")
+            storeFile = file("nekolsd.p12")
+            storePassword = System.getenv("KEYSTORE_PASS")
+            keyAlias = System.getenv("ALIAS_NAME")
+            keyPassword = System.getenv("ALIAS_PASS")
         }
     }
 
@@ -133,9 +133,9 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            isUniversalApk = false
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include("arm64-v8a", "x86_64")
         }
     }
 
