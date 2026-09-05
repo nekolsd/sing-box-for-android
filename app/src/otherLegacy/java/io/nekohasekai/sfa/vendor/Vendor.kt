@@ -6,7 +6,6 @@ import android.net.Uri
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.R
 import io.nekohasekai.sfa.bg.RootClient
 import io.nekohasekai.sfa.compose.screen.qrscan.QRCodeCropArea
@@ -14,7 +13,6 @@ import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.update.UpdateCheckException
 import io.nekohasekai.sfa.update.UpdateInfo
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 
 object Vendor : VendorInterface {
     private const val TAG = "Vendor"
@@ -95,11 +93,8 @@ object Vendor : VendorInterface {
 
     override val hasCustomUpdate = true
 
-    override fun checkUpdateAsync(): UpdateInfo? {
-        val track = UpdateTrack.fromString(Settings.updateTrack)
-        return GitHubUpdateChecker().use { checker ->
-            checker.checkUpdate(track, Settings.githubToken)
-        }
+    override fun checkUpdateAsync(): UpdateInfo? = GitHubUpdateChecker().use { checker ->
+        checker.checkUpdate(Settings.githubToken)
     }
 
     override fun scheduleAutoUpdate() {

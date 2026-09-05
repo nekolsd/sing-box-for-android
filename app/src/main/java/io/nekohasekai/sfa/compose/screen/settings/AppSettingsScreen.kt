@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -43,7 +42,6 @@ import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Key
 import androidx.compose.material.icons.outlined.Language
-import androidx.compose.material.icons.outlined.NewReleases
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Settings
@@ -79,7 +77,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -93,7 +90,6 @@ import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.navigation.NavController
-import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.Application
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.R
@@ -106,9 +102,7 @@ import io.nekohasekai.sfa.constant.Status
 import io.nekohasekai.sfa.database.Settings
 import io.nekohasekai.sfa.ktx.clipboardText
 import io.nekohasekai.sfa.update.UpdateCheckException
-import io.nekohasekai.sfa.update.UpdateSource
 import io.nekohasekai.sfa.update.UpdateState
-import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.utils.HookStatusClient
 import io.nekohasekai.sfa.vendor.Vendor
 import io.nekohasekai.sfa.xposed.XposedActivation
@@ -146,10 +140,6 @@ fun AppSettingsScreen(
     val hasUpdate by UpdateState.hasUpdate
     val updateInfo by UpdateState.updateInfo
     val isChecking by UpdateState.isChecking
-    var showSourceDialog by remember { mutableStateOf(false) }
-    var currentSource by remember { mutableStateOf(Settings.updateSource) }
-    var showTrackDialog by remember { mutableStateOf(false) }
-    var currentTrack by remember { mutableStateOf(Settings.updateTrack) }
     var showGitHubTokenDialog by remember { mutableStateOf(false) }
     var githubToken by remember { mutableStateOf(Settings.githubToken) }
     var checkUpdateEnabled by remember { mutableStateOf(Settings.checkUpdateEnabled) }
@@ -234,36 +224,6 @@ fun AppSettingsScreen(
                 }
             }
         }
-    }
-
-    if (showSourceDialog) {
-        UpdateSourceDialog(
-            currentSource = currentSource,
-            onSourceSelected = { source ->
-                currentSource = source
-                UpdateState.clear()
-                scope.launch(Dispatchers.IO) {
-                    Settings.updateSource = source
-                }
-                showSourceDialog = false
-            },
-            onDismiss = { showSourceDialog = false },
-        )
-    }
-
-    if (showTrackDialog) {
-        UpdateTrackDialog(
-            currentTrack = currentTrack,
-            onTrackSelected = { track ->
-                currentTrack = track
-                UpdateState.clear()
-                scope.launch(Dispatchers.IO) {
-                    Settings.updateTrack = track
-                }
-                showTrackDialog = false
-            },
-            onDismiss = { showTrackDialog = false },
-        )
     }
 
     if (showGitHubTokenDialog) {
@@ -801,21 +761,11 @@ fun AppSettingsScreen(
             ),
         ) {
             Column {
-                val isFDroid = UpdateSource.fromString(currentSource) == UpdateSource.FDROID
                 val updateItemCount =
                     run {
                         var count = 0
-                        if (Vendor.updateSources.size > 1) {
-                            count += 1
-                        }
                         if (Vendor.hasCustomUpdate) {
-                            count += 1
-                        }
-                        if (Vendor.hasCustomUpdate && !isFDroid) {
-                            count += 1
-                        }
-                        if (isFDroid) {
-                            count += 1
+                            count += 1 // GitHub token
                         }
                         count += 1
                         if (Vendor.hasCustomUpdate) {
@@ -848,76 +798,7 @@ fun AppSettingsScreen(
                     }
                 }
 
-                if (Vendor.updateSources.size > 1) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.update_source),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        supportingContent = {
-                            val sourceName = when (UpdateSource.fromString(currentSource)) {
-                                UpdateSource.GITHUB -> stringResource(R.string.update_source_github)
-                                UpdateSource.FDROID -> stringResource(R.string.update_source_fdroid)
-                            }
-                            Text(sourceName, style = MaterialTheme.typography.bodyMedium)
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier =
-                        updateItemModifier()
-                            .clickable { showSourceDialog = true },
-                        colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
-                }
-
                 if (Vendor.hasCustomUpdate) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.update_track),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        supportingContent = {
-                            val trackName = if (isFDroid) {
-                                stringResource(R.string.update_track_stable)
-                            } else {
-                                when (UpdateTrack.fromString(currentTrack)) {
-                                    UpdateTrack.STABLE -> stringResource(R.string.update_track_stable)
-                                    UpdateTrack.BETA -> stringResource(R.string.update_track_beta)
-                                }
-                            }
-                            Text(trackName, style = MaterialTheme.typography.bodyMedium)
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.NewReleases,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier =
-                        updateItemModifier().let {
-                            if (isFDroid) it.alpha(0.38f) else it.clickable { showTrackDialog = true }
-                        },
-                        colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
-                }
-
-                if (Vendor.hasCustomUpdate && !isFDroid) {
                     ListItem(
                         headlineContent = {
                             Text(
@@ -948,61 +829,6 @@ fun AppSettingsScreen(
                         ),
                     )
                 }
-
-                if (isFDroid) {
-                    ListItem(
-                        headlineContent = {
-                            Text(
-                                stringResource(R.string.fdroid_mirror),
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
-                        },
-                        supportingContent = {
-                            val mirrorUrl = Settings.fdroidMirrorUrl
-                            val mirrorName = remember(mirrorUrl) {
-                                val iter = Libbox.getFDroidMirrors()
-                                var name: String? = null
-                                while (iter.hasNext()) {
-                                    val m = iter.next()
-                                    if (m.url == mirrorUrl) {
-                                        name = m.name
-                                        break
-                                    }
-                                }
-                                if (name == null) {
-                                    val customMirrors = Settings.fdroidCustomMirrors
-                                    for (entry in customMirrors) {
-                                        val parts = entry.split("|", limit = 2)
-                                        if (parts.size == 2 && parts[1] == mirrorUrl) {
-                                            name = parts[0]
-                                            break
-                                        }
-                                    }
-                                }
-                                name ?: mirrorUrl
-                            }
-                            Text(
-                                mirrorName,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        },
-                        leadingContent = {
-                            Icon(
-                                imageVector = Icons.Outlined.Speed,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                            )
-                        },
-                        modifier =
-                        updateItemModifier()
-                            .clickable { navController.navigate("settings/fdroid_mirror") },
-                        colors =
-                        ListItemDefaults.colors(
-                            containerColor = Color.Transparent,
-                        ),
-                    )
-                }
-
                 ListItem(
                     headlineContent = {
                         Text(
@@ -1377,100 +1203,6 @@ fun AppSettingsScreen(
             }
         }
     }
-}
-
-@Composable
-private fun UpdateSourceDialog(
-    currentSource: String,
-    onSourceSelected: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val sources = listOf(
-        "github" to stringResource(R.string.update_source_github),
-        "fdroid" to stringResource(R.string.update_source_fdroid),
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.update_source)) },
-        text = {
-            Column {
-                sources.forEach { (value, label) ->
-                    Row(
-                        modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onSourceSelected(value) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = currentSource == value,
-                            onClick = { onSourceSelected(value) },
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun UpdateTrackDialog(
-    currentTrack: String,
-    onTrackSelected: (String) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    val tracks = listOf(
-        "stable" to stringResource(R.string.update_track_stable),
-        "beta" to stringResource(R.string.update_track_beta),
-    )
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.update_track)) },
-        text = {
-            Column {
-                tracks.forEach { (value, label) ->
-                    Row(
-                        modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(8.dp))
-                            .clickable { onTrackSelected(value) }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = currentTrack == value,
-                            onClick = { onTrackSelected(value) },
-                        )
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 8.dp),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(android.R.string.cancel))
-            }
-        },
-    )
 }
 
 @Composable
