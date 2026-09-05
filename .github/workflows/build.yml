@@ -1,0 +1,116 @@
+name: Build
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      sing_box_ref:
+        description: "nekolsd/sing-box tag, branch or commit to build against"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build APKs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout GUI
+        uses: actions/checkout@v6
+
+      - name: Read version
+        id: version
+        run: |
+          set -euo pipefail
+          source version.properties
+          echo "go_version=${GO_VERSION#go}" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout sing-box
+        uses: actions/checkout@v6
+        with:
+          repository: nekolsd/sing-box
+          ref: ${{ inputs.sing_box_ref || github.ref_name }}
+          path: build/sing-box
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ steps.version.outputs.go_version }}
+          cache-dependency-path: build/sing-box/go.sum
+
+      - name: Setup OpenJDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          cmdline-tools-version: "15859902"
+          packages: platforms;android-37.1 platforms;android-24 ndk;28.0.13004108
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build libbox
+        working-directory: build/sing-box
+        run: |
+          set -euo pipefail
+          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/28.0.13004108"
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          make lib_install
+          version=$(go run ./cmd/internal/read_tag)
+          tags="with_gvisor,with_quic,with_wireguard,with_utls,with_naive_outbound,with_clash_api,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0,with_tailscale,ts_omit_logtail,ts_omit_ssh,ts_omit_drive,ts_omit_taildrop,ts_omit_webclient,ts_omit_doctor,ts_omit_capture,ts_omit_kube,ts_omit_aws,ts_omit_synology,ts_omit_bird"
+          gomobile bind -v -trimpath -buildvcs=false -target android/arm64,android/amd64 \
+            -androidapi 24 -javapkg=io.nekohasekai -libname=box -tags "$tags" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=$version $(cat release/LDFLAGS) -s -w -buildid=" \
+            ./experimental/libbox
+          mkdir -p "$GITHUB_WORKSPACE/app/libs"
+          cp libbox.aar "$GITHUB_WORKSPACE/app/libs/"
+
+      - name: Build APKs
+        run: ./gradlew assembleOtherRelease
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          ALIAS_NAME: ${{ secrets.ALIAS_NAME }}
+          ALIAS_PASS: ${{ secrets.ALIAS_PASS }}
+
+      - name: Prepare release files
+        run: |
+          set -euo pipefail
+          mkdir -p build/release
+          cp app/build/outputs/apk/other/release/*.apk build/release/
+          jq '{version_code: .elements[0].versionCode, version_name: .elements[0].versionName}' \
+            app/build/outputs/apk/other/release/output-metadata.json \
+            > build/release/SFA-version-metadata.json
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SFA-${{ steps.version.outputs.version }}
+          path: build/release/
+          if-no-files-found: error
+
+      - name: Publish tag release
+        if: github.event_name == 'push' && github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: SFA ${{ steps.version.outputs.version }}
+          files: build/release/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+          generate_release_notes: false
