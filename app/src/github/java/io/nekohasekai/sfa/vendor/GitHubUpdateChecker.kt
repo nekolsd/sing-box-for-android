@@ -5,7 +5,6 @@ import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.sfa.BuildConfig
 import io.nekohasekai.sfa.ktx.unwrap
 import io.nekohasekai.sfa.update.UpdateInfo
-import io.nekohasekai.sfa.update.UpdateTrack
 import io.nekohasekai.sfa.utils.HTTPClient
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -14,8 +13,31 @@ import java.io.Closeable
 
 class GitHubUpdateChecker : Closeable {
     companion object {
-        private const val RELEASES_URL = "https://api.github.com/repos/SagerNet/sing-box/releases"
+        private const val RELEASES_URL = "https://api.github.com/repos/nekolsd/sing-box-for-android/releases"
         private const val METADATA_FILENAME = "SFA-version-metadata.json"
+
+        internal fun isNewerVersion(
+            version: VersionMetadata,
+            current: VersionMetadata,
+            compareSemver: (String, String) -> Boolean,
+        ): Boolean = version.versionCode > current.versionCode &&
+            (version.versionName == current.versionName || compareSemver(version.versionName, current.versionName))
+
+        internal fun findApkAsset(
+            assets: List<GitHubAsset>,
+            supportedAbis: List<String>,
+            legacy: Boolean,
+        ): GitHubAsset? {
+            val apks = assets.filter { asset ->
+                asset.name.endsWith(".apk") &&
+                    !asset.name.contains("-play-") &&
+                    asset.name.contains("-legacy-android-5-") == legacy
+            }
+            for (abi in supportedAbis) {
+                apks.find { it.name.endsWith("-$abi.apk") }?.let { return it }
+            }
+            return apks.find { it.name.endsWith("-universal.apk") }
+        }
     }
 
     private val client = Libbox.newHTTPClient().apply {
@@ -25,42 +47,42 @@ class GitHubUpdateChecker : Closeable {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun checkUpdate(track: UpdateTrack, githubToken: String): UpdateInfo? {
+    fun checkUpdate(githubToken: String): UpdateInfo? {
         val releases = getReleases(githubToken)
         var selected: ReleaseCandidate? = null
 
         for (release in releases) {
-            if (!isReleaseInTrack(release, track)) {
+            if (release.draft) {
                 continue
             }
+            val apkAsset = findApkAsset(
+                release.assets,
+                Build.SUPPORTED_ABIS.toList(),
+                BuildConfig.FLAVOR == "otherLegacy",
+            ) ?: continue
             val metadata = runCatching { downloadMetadata(release) }.getOrNull() ?: continue
-            if (!isNewerThanCurrent(metadata.versionName)) {
+            if (!isNewerVersion(metadata, VersionMetadata(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME), Libbox::compareSemver)) {
                 continue
             }
             val currentBest = selected
             if (currentBest == null || isBetterVersion(metadata, currentBest.metadata)) {
-                selected = ReleaseCandidate(release, metadata)
+                selected = ReleaseCandidate(release, metadata, apkAsset)
             }
         }
 
         val release = selected?.release ?: return null
         val metadata = selected.metadata
 
-        val isLegacy = Build.VERSION.SDK_INT < Build.VERSION_CODES.M
-        val apkAsset = release.assets.find { asset ->
-            asset.name.endsWith(".apk") &&
-                !asset.name.contains("play") &&
-                asset.name.contains("legacy-android-5") == isLegacy
-        }
+        val apkAsset = selected.apkAsset
 
         return UpdateInfo(
             versionCode = metadata.versionCode,
             versionName = metadata.versionName,
-            downloadUrl = apkAsset?.browserDownloadUrl ?: release.htmlUrl,
+            downloadUrl = apkAsset.browserDownloadUrl,
             releaseUrl = release.htmlUrl,
             releaseNotes = release.body,
             isPrerelease = release.prerelease,
-            fileSize = apkAsset?.size ?: 0,
+            fileSize = apkAsset.size,
         )
     }
 
@@ -79,18 +101,6 @@ class GitHubUpdateChecker : Closeable {
 
         return json.decodeFromString(content)
     }
-
-    private fun isReleaseInTrack(release: GitHubRelease, track: UpdateTrack): Boolean {
-        if (release.draft) {
-            return false
-        }
-        return when (track) {
-            UpdateTrack.STABLE -> !release.prerelease
-            UpdateTrack.BETA -> true
-        }
-    }
-
-    private fun isNewerThanCurrent(versionName: String): Boolean = Libbox.compareSemver(versionName, BuildConfig.VERSION_NAME)
 
     private fun isBetterVersion(version: VersionMetadata, other: VersionMetadata): Boolean {
         if (Libbox.compareSemver(version.versionName, other.versionName)) {
@@ -147,5 +157,6 @@ class GitHubUpdateChecker : Closeable {
     private data class ReleaseCandidate(
         val release: GitHubRelease,
         val metadata: VersionMetadata,
+        val apkAsset: GitHubAsset,
     )
 }
