@@ -23,6 +23,7 @@ configurations.configureEach {
 }
 
 fun getProps(propName: String): String {
+    System.getenv(propName)?.let { return it }
     val propsInEnv = System.getenv("LOCAL_PROPERTIES")
     if (propsInEnv != null) {
         val props = Properties()
@@ -72,7 +73,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "io.nekohasekai.sfa"
+        applicationId = "io.nekolsd.sfa"
         minSdk = 24
         targetSdk = 37
         versionCode = getVersionProps("VERSION_CODE").toInt()
@@ -82,7 +83,7 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("release.keystore")
+            storeFile = file("nekolsd.p12")
             storePassword = getProps("KEYSTORE_PASS")
             keyAlias = getProps("ALIAS_NAME")
             keyPassword = getProps("ALIAS_PASS")
@@ -134,9 +135,9 @@ android {
     splits {
         abi {
             isEnable = true
-            isUniversalApk = true
+            isUniversalApk = false
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            include("arm64-v8a", "x86_64")
         }
     }
 
