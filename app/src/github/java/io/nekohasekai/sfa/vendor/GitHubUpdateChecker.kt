@@ -19,9 +19,7 @@ class GitHubUpdateChecker : Closeable {
         internal fun isNewerVersion(
             version: VersionMetadata,
             current: VersionMetadata,
-            compareSemver: (String, String) -> Boolean,
-        ): Boolean = version.versionCode > current.versionCode &&
-            (version.versionName == current.versionName || compareSemver(version.versionName, current.versionName))
+        ): Boolean = version.versionCode > current.versionCode
 
         internal fun findApkAsset(
             assets: List<GitHubAsset>,
@@ -61,7 +59,7 @@ class GitHubUpdateChecker : Closeable {
                 BuildConfig.FLAVOR == "otherLegacy",
             ) ?: continue
             val metadata = runCatching { downloadMetadata(release) }.getOrNull() ?: continue
-            if (!isNewerVersion(metadata, VersionMetadata(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME), Libbox::compareSemver)) {
+            if (!isNewerVersion(metadata, VersionMetadata(BuildConfig.VERSION_CODE, BuildConfig.VERSION_NAME))) {
                 continue
             }
             val currentBest = selected
@@ -102,15 +100,8 @@ class GitHubUpdateChecker : Closeable {
         return json.decodeFromString(content)
     }
 
-    private fun isBetterVersion(version: VersionMetadata, other: VersionMetadata): Boolean {
-        if (Libbox.compareSemver(version.versionName, other.versionName)) {
-            return true
-        }
-        if (Libbox.compareSemver(other.versionName, version.versionName)) {
-            return false
-        }
-        return version.versionCode > other.versionCode
-    }
+    private fun isBetterVersion(version: VersionMetadata, other: VersionMetadata): Boolean =
+        version.versionCode > other.versionCode
 
     private fun downloadMetadata(release: GitHubRelease): VersionMetadata? {
         val metadataAsset = release.assets.find { it.name == METADATA_FILENAME }

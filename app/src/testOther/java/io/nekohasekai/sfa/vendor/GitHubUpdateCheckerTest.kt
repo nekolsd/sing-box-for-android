@@ -12,20 +12,25 @@ class GitHubUpdateCheckerTest {
     @Test
     fun sameVersionRebuildRequiresHigherVersionCode() {
         val installed = VersionMetadata(30, "1.14.0-alpha.35-nekolsd")
-        val compareSemver: (String, String) -> Boolean = { _, _ -> error("Identical names need no semver comparison") }
-        assertTrue(GitHubUpdateChecker.isNewerVersion(installed.copy(versionCode = 31), installed, compareSemver))
-        assertFalse(GitHubUpdateChecker.isNewerVersion(installed, installed, compareSemver))
-        assertFalse(GitHubUpdateChecker.isNewerVersion(installed.copy(versionCode = 29), installed, compareSemver))
+        assertTrue(GitHubUpdateChecker.isNewerVersion(installed.copy(versionCode = 31), installed))
+        assertFalse(GitHubUpdateChecker.isNewerVersion(installed, installed))
+        assertFalse(GitHubUpdateChecker.isNewerVersion(installed.copy(versionCode = 29), installed))
     }
 
     @Test
-    fun versionNameUpgradeAlsoRequiresAnInstallableVersionCode() {
+    fun versionNameIsIgnoredWhenComparingVersionCodes() {
         val installed = VersionMetadata(30, "1.14.0-alpha.35-nekolsd")
         val next = VersionMetadata(31, "1.15.0-alpha.2-nekolsd")
-        val compareSemver: (String, String) -> Boolean = { a, b -> a == next.versionName && b == installed.versionName }
-        assertTrue(GitHubUpdateChecker.isNewerVersion(next, installed, compareSemver))
-        assertFalse(GitHubUpdateChecker.isNewerVersion(next.copy(versionCode = 30), installed, compareSemver))
-        assertFalse(GitHubUpdateChecker.isNewerVersion(installed.copy(versionCode = 32), next, compareSemver))
+        assertTrue(GitHubUpdateChecker.isNewerVersion(next, installed))
+        assertFalse(GitHubUpdateChecker.isNewerVersion(next.copy(versionCode = 30), installed))
+    }
+
+    @Test
+    fun numericSuffixedVersionNameOnlyUpdatesByVersionCode() {
+        val installed = VersionMetadata(30, "1.15.0-alpha.2-nekolsd")
+        val rebuild = VersionMetadata(31, "1.15.0-alpha.2-nekolsd-2")
+        assertTrue(GitHubUpdateChecker.isNewerVersion(rebuild, installed))
+        assertFalse(GitHubUpdateChecker.isNewerVersion(rebuild.copy(versionCode = 30), installed))
     }
 
     @Test
